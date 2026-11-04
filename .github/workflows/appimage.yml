@@ -57,4 +57,4 @@ jobs:
           tag_name: "${{ env.VERSION }}"
           make_latest: true
           files: |
-            *.app*
+            *.AppImage*
