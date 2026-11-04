@@ -1,9 +1,5 @@
 #!/bin/sh
 
-pwd
-ls -la . "$(dirname "$0")"
-
-
 set -eu
 
 ARCH=$(uname -m)
