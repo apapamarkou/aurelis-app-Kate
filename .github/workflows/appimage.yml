@@ -57,4 +57,10 @@ jobs:
           tag_name: "${{ env.VERSION }}"
           make_latest: true
           files: |
-            *.AppImage*
+            *.app
+            *.app.sha256
+            *.json
+            *.xml
+            *.desktop
+            *.png
+            *.svg

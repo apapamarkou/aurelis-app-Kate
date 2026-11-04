@@ -1,10 +1,10 @@
 #!/bin/sh
 # pkg-meta.sh [arch-package] [file.AppImage]
 # Χωρίς όρισμα: το πακέτο βρίσκεται από το $DESKTOP (pacman -Qqo).
-# Τρέχει ΜΕΣΑ στο Arch container, μετά το `quick-sharun --make-appimage`.
-# Βάζει στο $OUTPATH (default ./dist) αρχεία με πρόθεμα <pkg>-<arch>.AppImage.
-# (ώστε να τα πιάνει το glob *.AppImage* του release action):
-#   P.json  P.png|svg  P.<name>.desktop  P.<name>.metainfo.xml  + <appimage>.sha256
+# Τρέχει ΜΕΣΑ στο Arch container, ΜΕΤΑ το `quick-sharun --make-appimage` (και το test).
+# Μετονομάζει  Name-VER-anylinux-ARCH.AppImage -> Name-VER-ARCH.app  και βάζει στο dist:
+#   Name-VER-ARCH.app.sha256   <pkg>-<arch>.json   <pkg>-<arch>.xml (AppStream)
+#   <όνομα>.desktop (όπως είναι)   <pkg>.png|svg (icon)
 set -eu
 
 PKG=${1:-}
@@ -16,10 +16,15 @@ fi
 OUT=${OUTPATH:-./dist}
 APPDIR=${APPDIR:-./AppDir}
 ARCH=${ARCH:-$(uname -m)}
-AI=${2:-$(ls "$OUT"/*.AppImage | head -n1)}
-AIF=${AI##*/}
-P="$PKG-$ARCH.AppImage"   # σταθερό όνομα, ανεξάρτητο της έκδοσης
 mkdir -p "$OUT"
+AI=${2:-$(ls "$OUT"/*.AppImage "$OUT"/*.app 2>/dev/null | head -n1)}
+[ -f "$AI" ] || { echo "pkg-meta: no AppImage in $OUT" >&2; exit 1; }
+AIF=${AI##*/}
+case "$AIF" in *.AppImage)   # Kate-1.0-anylinux-x86_64.AppImage -> Kate-1.0-x86_64.app
+	NEW=$(printf '%s' "$AIF" | sed 's/-anylinux//; s/\.AppImage$/.app/')
+	mv -f "$AI" "${AI%/*}/$NEW"; AI=${AI%/*}/$NEW; AIF=$NEW ;;
+esac
+P="$PKG-$ARCH"   # σταθερό όνομα, ανεξάρτητο της έκδοσης
 
 # --- helpers ---------------------------------------------------------------
 je() { printf '%s' "$1" | tr '\n\t' '  ' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
@@ -44,26 +49,37 @@ done
 [ -n "$DESKTOPS" ] || { [ -f "${DESKTOP:-}" ] && DESKTOPS=$DESKTOP; }
 [ -n "$DESKTOPS" ] || echo "WARN: no .desktop found" >&2
 DLIST=
-for f in $DESKTOPS; do cp -f "$f" "$OUT/$P.${f##*/}"; DLIST="$DLIST $OUT/$P.${f##*/}"; done
+for f in $DESKTOPS; do
+	case " $DLIST " in *" $OUT/${f##*/} "*) continue;; esac   # ίδιο όνομα = μία φορά
+	cp -f "$f" "$OUT/${f##*/}"; DLIST="$DLIST $OUT/${f##*/}"
+done
 MAIN=${DESKTOPS%% *}; MAIN=${MAIN# }
 [ -z "$MAIN" ] && MAIN=$(echo $DESKTOPS | cut -d' ' -f1)
 
 # --- 3. icon ---------------------------------------------------------------
-ICONF=
-if [ -e "$APPDIR/.DirIcon" ]; then ICONF=$(readlink -f "$APPDIR/.DirIcon" || true); fi
-case "$ICONF" in *.png|*.svg) ;; *)
-	ICONF=
-	for f in "$APPDIR"/*.png "$APPDIR"/*.svg; do [ -f "$f" ] && { ICONF=$f; break; }; done ;;
-esac
+# Το .DirIcon είναι συνήθως αντίγραφο (όχι symlink) και μπορεί να μην έχει κατάληξη
+# (π.χ. όταν το ICON είναι URL με ?ref_type=...), οπότε ο τύπος βρίσκεται από το περιεχόμενο.
+ICONF=; ICONEXT=
+for f in "$APPDIR/.DirIcon" "$APPDIR"/*.png "$APPDIR"/*.svg "$APPDIR"/*.png\?* "$APPDIR"/*.svg\?*; do
+	[ -s "$f" ] || continue
+	if [ "$(head -c 4 "$f" | od -An -tx1 | tr -d ' \n')" = 89504e47 ]; then ICONEXT=png
+	elif grep -q '<svg' "$f" 2>/dev/null; then ICONEXT=svg
+	else continue; fi
+	ICONF=$f; break
+done
 ICONNAME=
 if [ -n "$ICONF" ]; then
-	ICONNAME="$P.${ICONF##*.}"; cp -fL "$ICONF" "$OUT/$ICONNAME"
-else echo "WARN: no icon found" >&2; fi
+	ICONNAME="$PKG.$ICONEXT"; cp -fL "$ICONF" "$OUT/$ICONNAME"
+else echo "WARN: no icon found in $APPDIR" >&2; fi
 
 # --- 4. AppStream ----------------------------------------------------------
 METAS=$(pacman -Ql "$PKG" | awk '{print $2}' | grep -E '/usr/share/(metainfo|appdata)/[^/]+\.xml$' || true)
-MLIST=
-for f in $METAS; do cp -f "$f" "$OUT/$P.${f##*/}"; MLIST="$MLIST $OUT/$P.${f##*/}"; done
+MLIST=; SEEN=
+for f in $METAS; do
+	case " $SEEN " in *" ${f##*/} "*) continue;; esac; SEEN="$SEEN ${f##*/}"
+	if [ -z "$MLIST" ]; then dst="$OUT/$P.xml"; else dst="$OUT/${f##*/}"; fi   # πρώτο = <pkg>-<arch>.xml
+	cp -f "$f" "$dst"; MLIST="$MLIST $dst"
+done
 MAINM=$(echo $MLIST | cut -d' ' -f1)
 AS_NAME=; AS_SUM=; AS_ID=
 if [ -n "$MAINM" ]; then
