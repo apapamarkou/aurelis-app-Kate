@@ -1,16 +1,24 @@
 #!/bin/sh
-# pkg-meta.sh <arch-package> [file.AppImage]
+# pkg-meta.sh [arch-package] [file.AppImage]
+# Χωρίς όρισμα: το πακέτο βρίσκεται από το $DESKTOP (pacman -Qqo).
 # Τρέχει ΜΕΣΑ στο Arch container, μετά το `quick-sharun --make-appimage`.
-# Βάζει στο $OUTPATH (default ./dist):  <pkg>-<arch>.json, <appimage>.sha256,
-# <pkg>.png|svg, *.desktop, *.metainfo.xml / *.appdata.xml
+# Βάζει στο $OUTPATH (default ./dist) αρχεία με πρόθεμα <pkg>-<arch>.AppImage.
+# (ώστε να τα πιάνει το glob *.AppImage* του release action):
+#   P.json  P.png|svg  P.<name>.desktop  P.<name>.metainfo.xml  + <appimage>.sha256
 set -eu
 
-PKG=${1:?usage: pkg-meta.sh <arch-package> [file.AppImage]}
+PKG=${1:-}
+if [ -z "$PKG" ]; then
+	PKG=$(pacman -Qqo "${DESKTOP:?set DESKTOP or pass the package name}" 2>/dev/null | head -n1) \
+		|| true
+	[ -n "$PKG" ] || { echo "pkg-meta: cannot detect package from DESKTOP=$DESKTOP" >&2; exit 1; }
+fi
 OUT=${OUTPATH:-./dist}
 APPDIR=${APPDIR:-./AppDir}
 ARCH=${ARCH:-$(uname -m)}
 AI=${2:-$(ls "$OUT"/*.AppImage | head -n1)}
 AIF=${AI##*/}
+P="$PKG-$ARCH.AppImage"   # σταθερό όνομα, ανεξάρτητο της έκδοσης
 mkdir -p "$OUT"
 
 # --- helpers ---------------------------------------------------------------
@@ -36,7 +44,7 @@ done
 [ -n "$DESKTOPS" ] || { [ -f "${DESKTOP:-}" ] && DESKTOPS=$DESKTOP; }
 [ -n "$DESKTOPS" ] || echo "WARN: no .desktop found" >&2
 DLIST=
-for f in $DESKTOPS; do cp -f "$f" "$OUT/"; DLIST="$DLIST $OUT/${f##*/}"; done
+for f in $DESKTOPS; do cp -f "$f" "$OUT/$P.${f##*/}"; DLIST="$DLIST $OUT/$P.${f##*/}"; done
 MAIN=${DESKTOPS%% *}; MAIN=${MAIN# }
 [ -z "$MAIN" ] && MAIN=$(echo $DESKTOPS | cut -d' ' -f1)
 
@@ -49,13 +57,13 @@ case "$ICONF" in *.png|*.svg) ;; *)
 esac
 ICONNAME=
 if [ -n "$ICONF" ]; then
-	ICONNAME="$PKG.${ICONF##*.}"; cp -fL "$ICONF" "$OUT/$ICONNAME"
+	ICONNAME="$P.${ICONF##*.}"; cp -fL "$ICONF" "$OUT/$ICONNAME"
 else echo "WARN: no icon found" >&2; fi
 
 # --- 4. AppStream ----------------------------------------------------------
 METAS=$(pacman -Ql "$PKG" | awk '{print $2}' | grep -E '/usr/share/(metainfo|appdata)/[^/]+\.xml$' || true)
 MLIST=
-for f in $METAS; do cp -f "$f" "$OUT/"; MLIST="$MLIST $OUT/${f##*/}"; done
+for f in $METAS; do cp -f "$f" "$OUT/$P.${f##*/}"; MLIST="$MLIST $OUT/$P.${f##*/}"; done
 MAINM=$(echo $MLIST | cut -d' ' -f1)
 AS_NAME=; AS_SUM=; AS_ID=
 if [ -n "$MAINM" ]; then
@@ -71,7 +79,7 @@ BASE=
 [ -n "$REPO" ] && BASE="https://github.com/$REPO/releases/$TAGPATH"
 
 # --- 6. JSON ---------------------------------------------------------------
-J="$OUT/$PKG-$ARCH.json"
+J="$OUT/$P.json"
 cat > "$J" <<JSON
 {
   "pkg": "$(je "$PKG")",
