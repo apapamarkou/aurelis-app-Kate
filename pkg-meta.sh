@@ -2,8 +2,8 @@
 # pkg-meta.sh [arch-package] [file.AppImage]
 # Χωρίς όρισμα: το πακέτο βρίσκεται από το $DESKTOP (pacman -Qqo).
 # Τρέχει ΜΕΣΑ στο Arch container, ΜΕΤΑ το `quick-sharun --make-appimage` (και το test).
-# Μετονομάζει  Name-VER-anylinux-ARCH.AppImage -> Name-VER-ARCH.app  και βάζει στο dist:
-#   Name-VER-ARCH.app.sha256   <pkg>-<arch>.json   <pkg>-<arch>.xml (AppStream)
+# Μετονομάζει  Name-VER-anylinux-ARCH.AppImage -> Name-VER-ARCH.AppImage  και βάζει στο dist:
+#   Name-VER-ARCH.AppImage.sha256   <pkg>-<arch>.json   <pkg>-<arch>.xml (AppStream)
 #   <όνομα>.desktop (όπως είναι)   <pkg>.png|svg (icon)
 set -eu
 
@@ -17,13 +17,14 @@ OUT=${OUTPATH:-./dist}
 APPDIR=${APPDIR:-./AppDir}
 ARCH=${ARCH:-$(uname -m)}
 mkdir -p "$OUT"
-AI=${2:-$(ls "$OUT"/*.AppImage "$OUT"/*.app 2>/dev/null | head -n1)}
+AI=${2:-$(ls "$OUT"/*.AppImage 2>/dev/null | head -n1)}
 [ -f "$AI" ] || { echo "pkg-meta: no AppImage in $OUT" >&2; exit 1; }
 AIF=${AI##*/}
-case "$AIF" in *.AppImage)   # Kate-1.0-anylinux-x86_64.AppImage -> Kate-1.0-x86_64.app
-	NEW=$(printf '%s' "$AIF" | sed 's/-anylinux//; s/\.AppImage$/.app/')
+case "$AIF" in *-anylinux-*)   # Kate-1.0-anylinux-x86_64.AppImage -> Kate-1.0-x86_64.AppImage
+	NEW=$(printf '%s' "$AIF" | sed 's/-anylinux//')
 	mv -f "$AI" "${AI%/*}/$NEW"; AI=${AI%/*}/$NEW; AIF=$NEW ;;
 esac
+
 P="$PKG-$ARCH"   # σταθερό όνομα, ανεξάρτητο της έκδοσης
 
 # --- helpers ---------------------------------------------------------------
