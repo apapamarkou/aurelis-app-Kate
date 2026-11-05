@@ -56,11 +56,4 @@ jobs:
           name: "Kate ${{ env.VERSION }}"
           tag_name: "${{ env.VERSION }}"
           make_latest: true
-          files: |
-            *.app
-            *.app.sha256
-            *.json
-            *.xml
-            *.desktop
-            *.png
-            *.svg
+          files: "*"
